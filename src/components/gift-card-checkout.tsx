@@ -12,6 +12,8 @@ import {
   getConfiguredHhMint,
   getHhDecimals,
   getMerchantWallet,
+  hasInvalidHhMintEnv,
+  hasInvalidMerchantEnv,
   USDC_MINT_MAINNET,
 } from "@/lib/tokens";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -21,6 +23,11 @@ import { VersionedTransaction } from "@solana/web3.js";
 import { useCallback, useMemo, useState } from "react";
 
 const GIFT_DENOMS_USD = [5, 10, 25, 50, 100] as const;
+
+function truncateAddr(base58: string, head = 4, tail = 4): string {
+  if (base58.length <= head + tail + 1) return base58;
+  return `${base58.slice(0, head)}…${base58.slice(-tail)}`;
+}
 
 export function GiftCardCheckout() {
   const { connection } = useConnection();
@@ -133,13 +140,22 @@ export function GiftCardCheckout() {
         <p className="font-medium text-amber-50">
           Executable value only — wallet “portfolio” totals can diverge massively.
         </p>
-        <p className="mt-2 leading-relaxed text-amber-100/90">
-          This page quotes a Jupiter route that delivers an exact USDC amount to
-          your merchant wallet (gift-card style). If pools are thin, the HH cost
-          will look enormous or the quote will fail — that is the market, not a
-          UI bug. Fulfillment of third-party gift cards still requires your own
-          ops (we only move USDC on-chain).
-        </p>
+        {configReady ? (
+          <p className="mt-2 text-sm leading-relaxed text-amber-100/85">
+            Jupiter quotes live routes: thin HH liquidity means high HH cost or
+            failed quotes. This app only settles <span className="text-amber-50">USDC</span>{" "}
+            on-chain; branded gift cards or retail SKUs are your separate
+            fulfillment step.
+          </p>
+        ) : (
+          <p className="mt-2 leading-relaxed text-amber-100/90">
+            This page quotes a Jupiter route that delivers an exact USDC amount to
+            your merchant wallet (gift-card style). If pools are thin, the HH cost
+            will look enormous or the quote will fail — that is the market, not a
+            UI bug. Fulfillment of third-party gift cards still requires your own
+            ops (we only move USDC on-chain).
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -151,20 +167,86 @@ export function GiftCardCheckout() {
         <div className="rounded-xl border border-red-900/60 bg-red-950/50 p-4 text-sm text-red-100">
           <p className="font-medium">Configure environment variables</p>
           <ul className="mt-2 list-inside list-disc space-y-1">
-            {!hhMint && <li>NEXT_PUBLIC_HH_MINT</li>}
-            {!merchant && <li>NEXT_PUBLIC_MERCHANT_WALLET (merchant Solana pubkey)</li>}
+            {!hhMint && !hasInvalidHhMintEnv() && (
+              <li>
+                <code className="text-red-200">NEXT_PUBLIC_HH_MINT</code> — full
+                Solana mint (base58 only, no spaces or English text)
+              </li>
+            )}
+            {hasInvalidHhMintEnv() && (
+              <li>
+                <code className="text-red-200">NEXT_PUBLIC_HH_MINT</code> is set but
+                not valid base58 (remove placeholder text; paste the real mint from
+                Solscan or your wallet)
+              </li>
+            )}
+            {!merchant && !hasInvalidMerchantEnv() && (
+              <li>
+                <code className="text-red-200">NEXT_PUBLIC_MERCHANT_WALLET</code> —
+                merchant Solana address (base58)
+              </li>
+            )}
+            {hasInvalidMerchantEnv() && (
+              <li>
+                <code className="text-red-200">NEXT_PUBLIC_MERCHANT_WALLET</code> is
+                set but not valid base58
+              </li>
+            )}
             {merchant && !merchantUsdcAta && (
               <li>Could not derive merchant USDC token account.</li>
             )}
           </ul>
           <p className="mt-2 opacity-90">
-            For local dev, create{" "}
-            <code className="rounded bg-black/30 px-1">.env.local</code> next to{" "}
-            <code className="rounded bg-black/30 px-1">package.json</code>; restart{" "}
-            <code className="rounded bg-black/30 px-1">npm run dev</code>. For hosted
-            static builds (e.g. Cloudflare Pages / Vercel), set vars in the project
-            env settings and redeploy — <code className="text-zinc-400">NEXT_PUBLIC_*</code>{" "}
-            is inlined at build time.
+            For local dev, use <code className="rounded bg-black/30 px-1">.env.local</code>
+            . On Cloudflare Pages / Vercel, set variables in the dashboard and{" "}
+            <span className="font-medium text-red-50">redeploy</span> —{" "}
+            <code className="text-red-200/90">NEXT_PUBLIC_*</code> is baked in at{" "}
+            <code className="rounded bg-black/30 px-1">npm run build</code>.
+          </p>
+        </div>
+      )}
+
+      {configReady && hhMint && merchant && merchantUsdcAta && (
+        <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/35 p-4 text-sm text-emerald-100">
+          <p className="font-medium text-emerald-50">Build configuration</p>
+          <dl className="mt-3 space-y-2 text-xs">
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+              <dt className="shrink-0 text-emerald-200/80">HH mint</dt>
+              <dd className="font-mono text-emerald-100">
+                <a
+                  className="underline decoration-emerald-700 hover:text-white"
+                  href={`https://solscan.io/token/${hhMint.toBase58()}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {truncateAddr(hhMint.toBase58())}
+                </a>
+              </dd>
+            </div>
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+              <dt className="shrink-0 text-emerald-200/80">Merchant</dt>
+              <dd className="font-mono text-emerald-100">
+                <a
+                  className="underline decoration-emerald-700 hover:text-white"
+                  href={`https://solscan.io/account/${merchant.toBase58()}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {truncateAddr(merchant.toBase58())}
+                </a>
+              </dd>
+            </div>
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+              <dt className="shrink-0 text-emerald-200/80">USDC deposit (ATA)</dt>
+              <dd className="break-all font-mono text-emerald-100/95">
+                {truncateAddr(merchantUsdcAta.toBase58())}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-xs leading-relaxed text-emerald-200/75">
+            Buyer pays HH via Jupiter; this build credits the exact USDC amount to
+            the merchant ATA. Issuing a gift code or retail order is still your
+            back-office step after the transfer confirms.
           </p>
         </div>
       )}
@@ -252,7 +334,7 @@ export function GiftCardCheckout() {
             onClick={() => void runPay()}
             className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-8"
           >
-            {busy === "pay" ? "Signing…" : "Pay with HH (sign swap)"}
+            {busy === "pay" ? "Signing…" : "Pay with HH → USDC to merchant"}
           </button>
           {!connected && (
             <p className="mt-2 text-xs text-zinc-500">
@@ -279,7 +361,7 @@ export function GiftCardCheckout() {
         )}
       </section>
 
-      {merchantUsdcAta && (
+      {!configReady && merchantUsdcAta && (
         <p className="text-center text-xs text-zinc-600">
           Merchant USDC ATA:{" "}
           <span className="font-mono">{merchantUsdcAta.toBase58()}</span>

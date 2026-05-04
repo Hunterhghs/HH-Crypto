@@ -33,3 +33,26 @@ export function getHhDecimals(): number {
   const n = Number(process.env.NEXT_PUBLIC_HH_DECIMALS ?? "9");
   return Number.isFinite(n) ? n : 9;
 }
+
+/** True when env is set but is not a valid Solana address (e.g. pasted description text). */
+export function hasInvalidHhMintEnv(): boolean {
+  const raw = process.env.NEXT_PUBLIC_HH_MINT?.trim();
+  if (!raw) return false;
+  try {
+    new PublicKey(raw);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export function hasInvalidMerchantEnv(): boolean {
+  const raw = process.env.NEXT_PUBLIC_MERCHANT_WALLET?.trim();
+  if (!raw) return false;
+  try {
+    new PublicKey(raw);
+    return false;
+  } catch {
+    return true;
+  }
+}
