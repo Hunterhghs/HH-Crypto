@@ -9,10 +9,10 @@ export default function Home() {
         </h1>
         <p className="mx-auto mt-3 max-w-xl text-pretty text-sm text-zinc-400">
           Live Jupiter <code className="text-zinc-300">ExactOut</code> quotes:
-          HH from the buyer delivers a fixed amount of USDC to your merchant
-          wallet. Useful to see{" "}
-          <span className="text-zinc-200">executable</span> cost before you wire
-          real fulfillment.
+          HH settles to a chosen stable (USDC / USDT) in the merchant SPL
+          account. Use it to gauge{" "}
+          <span className="text-zinc-200">executable</span> cost — gift-card
+          issuance is still a separate step.
         </p>
       </header>
       <GiftCardCheckout />

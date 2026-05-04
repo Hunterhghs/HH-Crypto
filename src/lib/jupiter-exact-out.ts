@@ -1,23 +1,23 @@
 /**
  * Thin helpers for Jupiter "Payments Through Swap" style quotes (ExactOut).
- * Settlement token: USDC. Input: HH mint from env.
+ * Settlement: configurable mint on Solana. Input: HH mint from env.
  */
 import {
   JUPITER_LITE_QUOTE_URL,
   JUPITER_LITE_SWAP_URL,
 } from "@/lib/tokens";
 
-/** USDC smallest units → float USDC (6 decimals). */
-export function atomsToUsdc(atoms: string): number {
-  return Number(BigInt(atoms)) / 1e6;
+/** Stable-token smallest units → float (~USD for USDC/USDT). */
+export function atomsToUsdLike(atoms: string, decimals: number): number {
+  return Number(BigInt(atoms)) / 10 ** decimals;
 }
 
 export function hhAtomsToHuman(atoms: string, decimals: number): number {
   return Number(BigInt(atoms)) / 10 ** decimals;
 }
 
-/** USDC decimal dollars → Atom string (bigint as string). */
-export function usdcDollarsToAtoms(dollars: number): bigint {
+/** ~USD face amount → atom count (USDC/USDT both 6 decimals). */
+export function usdStableDollarsToAtoms(dollars: number): bigint {
   return BigInt(Math.round(dollars * 1e6));
 }
 
@@ -30,10 +30,11 @@ export type JupiterQuoteResponse = Record<string, unknown> & {
   routePlan?: unknown;
 };
 
-export async function quoteExactOutHhToUsdc(params: {
+export async function quoteExactOutHhToSettlement(params: {
   hhMint: string;
-  /** Exact USDC atoms (6 decimals) merchant should receive */
-  exactOutUsdcAtoms: bigint;
+  settlementMint: string;
+  /** Exact settlement-token atoms merchant should receive */
+  exactOutAtoms: bigint;
   /** Default 150 = 1.5% */
   slippageBps?: number;
   /** Restrict intermediate hops (Jupiter Payments guidance) */
@@ -41,18 +42,16 @@ export async function quoteExactOutHhToUsdc(params: {
 }): Promise<JupiterQuoteResponse> {
   const {
     hhMint,
-    exactOutUsdcAtoms,
+    settlementMint,
+    exactOutAtoms,
     slippageBps = 150,
     restrictIntermediateTokens = true,
   } = params;
 
   const u = new URL(JUPITER_LITE_QUOTE_URL);
   u.searchParams.set("inputMint", hhMint);
-  u.searchParams.set(
-    "outputMint",
-    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  );
-  u.searchParams.set("amount", exactOutUsdcAtoms.toString());
+  u.searchParams.set("outputMint", settlementMint);
+  u.searchParams.set("amount", exactOutAtoms.toString());
   u.searchParams.set("swapMode", "ExactOut");
   u.searchParams.set("slippageBps", String(slippageBps));
   u.searchParams.set(
@@ -75,7 +74,7 @@ export async function quoteExactOutHhToUsdc(params: {
 export async function buildSwapTransaction(params: {
   quoteResponse: JupiterQuoteResponse;
   customerPubkey: string;
-  /** Merchant USDC associated token account */
+  /** Merchant SPL token associated account for settlement mint */
   destinationTokenAccount: string;
 }): Promise<string> {
   const { quoteResponse, customerPubkey, destinationTokenAccount } = params;

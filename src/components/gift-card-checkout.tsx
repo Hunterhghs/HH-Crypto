@@ -1,20 +1,22 @@
 "use client";
 
 import {
-  atomsToUsdc,
+  atomsToUsdLike,
   buildSwapTransaction,
   hhAtomsToHuman,
-  quoteExactOutHhToUsdc,
-  usdcDollarsToAtoms,
+  quoteExactOutHhToSettlement,
+  usdStableDollarsToAtoms,
   type JupiterQuoteResponse,
 } from "@/lib/jupiter-exact-out";
 import {
+  type StableSettlementId,
+  settlementById,
+  STABLE_SETTLEMENTS,
   getConfiguredHhMint,
   getHhDecimals,
   getMerchantWallet,
   hasInvalidHhMintEnv,
   hasInvalidMerchantEnv,
-  USDC_MINT_MAINNET,
 } from "@/lib/tokens";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
@@ -36,14 +38,20 @@ export function GiftCardCheckout() {
   const merchant = useMemo(() => getMerchantWallet(), []);
   const hhDecimals = useMemo(() => getHhDecimals(), []);
 
-  const merchantUsdcAta = useMemo(() => {
+  const [settlementId, setSettlementId] = useState<StableSettlementId>("usdc");
+  const settlement = useMemo(
+    () => settlementById(settlementId),
+    [settlementId],
+  );
+
+  const merchantSettlementAta = useMemo(() => {
     if (!merchant) return null;
     try {
-      return getAssociatedTokenAddressSync(USDC_MINT_MAINNET, merchant);
+      return getAssociatedTokenAddressSync(settlement.mint, merchant);
     } catch {
       return null;
     }
-  }, [merchant]);
+  }, [merchant, settlement.mint]);
 
   const [denom, setDenom] = useState<(typeof GIFT_DENOMS_USD)[number]>(25);
   const [quote, setQuote] = useState<JupiterQuoteResponse | null>(null);
@@ -63,10 +71,11 @@ export function GiftCardCheckout() {
     setBusy("quote");
     setQuote(null);
     try {
-      const atoms = usdcDollarsToAtoms(denom);
-      const q = await quoteExactOutHhToUsdc({
+      const atoms = usdStableDollarsToAtoms(denom);
+      const q = await quoteExactOutHhToSettlement({
         hhMint: hhMint.toBase58(),
-        exactOutUsdcAtoms: atoms,
+        settlementMint: settlement.mint.toBase58(),
+        exactOutAtoms: atoms,
       });
       setQuote(q);
     } catch (e) {
@@ -74,12 +83,19 @@ export function GiftCardCheckout() {
     } finally {
       setBusy(null);
     }
-  }, [hhMint, denom]);
+  }, [hhMint, denom, settlement.mint]);
 
   const runPay = useCallback(async () => {
     setPayError(null);
     setTxSig(null);
-    if (!hhMint || !merchant || !merchantUsdcAta || !quote || !publicKey || !signTransaction) {
+    if (
+      !hhMint ||
+      !merchant ||
+      !merchantSettlementAta ||
+      !quote ||
+      !publicKey ||
+      !signTransaction
+    ) {
       setPayError("Wallet, merchant wallet, HH mint, and quote required.");
       return;
     }
@@ -96,7 +112,7 @@ export function GiftCardCheckout() {
       const swapB64 = await buildSwapTransaction({
         quoteResponse: quote,
         customerPubkey: publicKey.toBase58(),
-        destinationTokenAccount: merchantUsdcAta.toBase58(),
+        destinationTokenAccount: merchantSettlementAta.toBase58(),
       });
       const buf = Buffer.from(swapB64, "base64");
       let vtx = VersionedTransaction.deserialize(buf);
@@ -117,7 +133,7 @@ export function GiftCardCheckout() {
   }, [
     hhMint,
     merchant,
-    merchantUsdcAta,
+    merchantSettlementAta,
     quote,
     publicKey,
     signTransaction,
@@ -128,11 +144,14 @@ export function GiftCardCheckout() {
     quote && quote.inAmount && quote.outAmount
       ? {
           hhIn: hhAtomsToHuman(quote.inAmount, hhDecimals),
-          usdcDelivered: atomsToUsdc(quote.outAmount),
+          settledDelivered: atomsToUsdLike(
+            quote.outAmount,
+            settlement.decimals,
+          ),
         }
       : null;
 
-  const configReady = Boolean(hhMint && merchant && merchantUsdcAta);
+  const configReady = Boolean(hhMint && merchant && merchantSettlementAta);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
@@ -143,19 +162,33 @@ export function GiftCardCheckout() {
         {configReady ? (
           <p className="mt-2 text-sm leading-relaxed text-amber-100/85">
             Jupiter quotes live routes: thin HH liquidity means high HH cost or
-            failed quotes. This app only settles <span className="text-amber-50">USDC</span>{" "}
-            on-chain; branded gift cards or retail SKUs are your separate
-            fulfillment step.
+            failed quotes. Settlement is on-chain SPL only (e.g. USDC / USDT);
+            issuing a branded gift-card code or mailing a physical good is{" "}
+            <span className="text-amber-50">separate fulfillment</span> you or a
+            partner API operates after funds arrive.
           </p>
         ) : (
           <p className="mt-2 leading-relaxed text-amber-100/90">
-            This page quotes a Jupiter route that delivers an exact USDC amount to
-            your merchant wallet (gift-card style). If pools are thin, the HH cost
-            will look enormous or the quote will fail — that is the market, not a
-            UI bug. Fulfillment of third-party gift cards still requires your own
-            ops (we only move USDC on-chain).
+            This flow moves HH → a stable SPL on Solana via Jupiter (ExactOut).
+            Retail gift-card APIs expect USD / card rails — usual pattern is swap
+            to stable here, then a backend buys the card. That second step is
+            not wired in yet.
           </p>
         )}
+      </div>
+
+      <div className="rounded-2xl border border-violet-900/45 bg-violet-950/30 p-4 text-sm text-violet-100">
+        <p className="font-medium text-violet-50">
+          Buying real gift cards or “other goods”
+        </p>
+        <p className="mt-2 leading-relaxed text-violet-100/88">
+          This page handles the <strong>crypto leg</strong> (HH swapped into a
+          stable SPL in the merchant wallet). To <strong>purchase an actual
+          card or SKU</strong>, you integrate a merchant API (often KYC /
+          treasury), or manually fulfill after verifying the Solana tx. No
+          on-chain Jupiter route magically buys Amazon balance — vendors settle
+          in fiat or stables via their systems.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -192,8 +225,8 @@ export function GiftCardCheckout() {
                 set but not valid base58
               </li>
             )}
-            {merchant && !merchantUsdcAta && (
-              <li>Could not derive merchant USDC token account.</li>
+            {merchant && !merchantSettlementAta && (
+              <li>Could not derive merchant deposit address for settlement token.</li>
             )}
           </ul>
           <p className="mt-2 opacity-90">
@@ -206,10 +239,17 @@ export function GiftCardCheckout() {
         </div>
       )}
 
-      {configReady && hhMint && merchant && merchantUsdcAta && (
+      {configReady && hhMint && merchant && merchantSettlementAta && (
         <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/35 p-4 text-sm text-emerald-100">
           <p className="font-medium text-emerald-50">Build configuration</p>
           <dl className="mt-3 space-y-2 text-xs">
+            <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
+              <dt className="shrink-0 text-emerald-200/80">Settlement</dt>
+              <dd className="font-mono text-emerald-100">
+                {settlement.label}{" "}
+                <span className="text-emerald-200/65">(~$1 peg, not advice)</span>
+              </dd>
+            </div>
             <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
               <dt className="shrink-0 text-emerald-200/80">HH mint</dt>
               <dd className="font-mono text-emerald-100">
@@ -237,30 +277,60 @@ export function GiftCardCheckout() {
               </dd>
             </div>
             <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
-              <dt className="shrink-0 text-emerald-200/80">USDC deposit (ATA)</dt>
+              <dt className="shrink-0 text-emerald-200/80">
+                {settlement.label} deposit (ATA)
+              </dt>
               <dd className="break-all font-mono text-emerald-100/95">
-                {truncateAddr(merchantUsdcAta.toBase58())}
+                {truncateAddr(merchantSettlementAta.toBase58())}
               </dd>
             </div>
           </dl>
           <p className="mt-3 text-xs leading-relaxed text-emerald-200/75">
-            Buyer pays HH via Jupiter; this build credits the exact USDC amount to
-            the merchant ATA. Issuing a gift code or retail order is still your
-            back-office step after the transfer confirms.
+            Merchants must have (or create) this SPL token account before the
+            first payout; many wallets create it on first receive.
           </p>
         </div>
       )}
 
       <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
         <h3 className="text-base font-semibold text-zinc-100">
-          Digital credit (priced in deliverable USDC)
+          Checkout (face value in stable SPL)
         </h3>
         <p className="mt-2 text-sm text-zinc-400">
-          Pick a denomination. Merchant receives exactly that much USDC (before
-          your own bookkeeping / issuance of codes).
+          Choose settlement token and dollar face amount. The merchant receives
+          that many units of the stable (6 decimals) if the route succeeds.
         </p>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+            Settlement token
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {STABLE_SETTLEMENTS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => {
+                  setSettlementId(s.id);
+                  setQuote(null);
+                  setQuoteError(null);
+                }}
+                className={`rounded-full px-4 py-2 text-left text-sm font-medium transition ${
+                  settlementId === s.id
+                    ? "bg-violet-600 text-white"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                }`}
+              >
+                <span className="block">{s.label}</span>
+                <span className="mt-0.5 block text-xs font-normal opacity-80">
+                  {s.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-2">
           {GIFT_DENOMS_USD.map((d) => (
             <button
               key={d}
@@ -299,9 +369,15 @@ export function GiftCardCheckout() {
         {quoteSummary && (
           <div className="mt-5 space-y-2 rounded-xl border border-zinc-700 bg-zinc-950/60 p-4 text-sm text-zinc-200">
             <p>
-              <span className="text-zinc-500">USDC to merchant: </span>
+              <span className="text-zinc-500">
+                {settlement.label} to merchant (face):{" "}
+              </span>
               <span className="font-mono text-zinc-100">
-                ${quoteSummary.usdcDelivered.toFixed(2)}
+                ≈ $
+                {quoteSummary.settledDelivered.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
               </span>
             </p>
             <p>
@@ -334,7 +410,9 @@ export function GiftCardCheckout() {
             onClick={() => void runPay()}
             className="w-full rounded-xl bg-violet-600 py-3 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-8"
           >
-            {busy === "pay" ? "Signing…" : "Pay with HH → USDC to merchant"}
+            {busy === "pay"
+              ? "Signing…"
+              : `Pay with HH → ${settlement.label} to merchant`}
           </button>
           {!connected && (
             <p className="mt-2 text-xs text-zinc-500">
@@ -360,13 +438,6 @@ export function GiftCardCheckout() {
           </p>
         )}
       </section>
-
-      {!configReady && merchantUsdcAta && (
-        <p className="text-center text-xs text-zinc-600">
-          Merchant USDC ATA:{" "}
-          <span className="font-mono">{merchantUsdcAta.toBase58()}</span>
-        </p>
-      )}
     </div>
   );
 }
