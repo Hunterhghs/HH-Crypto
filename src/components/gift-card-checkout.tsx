@@ -161,8 +161,10 @@ export function GiftCardCheckout() {
             For local dev, create{" "}
             <code className="rounded bg-black/30 px-1">.env.local</code> next to{" "}
             <code className="rounded bg-black/30 px-1">package.json</code>; restart{" "}
-            <code className="rounded bg-black/30 px-1">npm run dev</code>. On Vercel,
-            set env vars in the dashboard.
+            <code className="rounded bg-black/30 px-1">npm run dev</code>. For hosted
+            static builds (e.g. Cloudflare Pages / Vercel), set vars in the project
+            env settings and redeploy — <code className="text-zinc-400">NEXT_PUBLIC_*</code>{" "}
+            is inlined at build time.
           </p>
         </div>
       )}
