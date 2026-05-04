@@ -1,0 +1,35 @@
+import { PublicKey } from "@solana/web3.js";
+
+/** Native USDC on Solana mainnet */
+export const USDC_MINT_MAINNET = new PublicKey(
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+);
+
+export const JUPITER_LITE_QUOTE_URL = "https://lite-api.jup.ag/swap/v1/quote";
+export const JUPITER_LITE_SWAP_URL = "https://lite-api.jup.ag/swap/v1/swap";
+
+/** HH mint must be configured via NEXT_PUBLIC_HH_MINT — never hardcode issuer tokens. */
+export function getConfiguredHhMint(): PublicKey | null {
+  const raw = process.env.NEXT_PUBLIC_HH_MINT?.trim();
+  if (!raw) return null;
+  try {
+    return new PublicKey(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function getMerchantWallet(): PublicKey | null {
+  const raw = process.env.NEXT_PUBLIC_MERCHANT_WALLET?.trim();
+  if (!raw) return null;
+  try {
+    return new PublicKey(raw);
+  } catch {
+    return null;
+  }
+}
+
+export function getHhDecimals(): number {
+  const n = Number(process.env.NEXT_PUBLIC_HH_DECIMALS ?? "9");
+  return Number.isFinite(n) ? n : 9;
+}

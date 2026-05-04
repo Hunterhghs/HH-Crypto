@@ -1,0 +1,2 @@
+# Root-level noise (ignored in addition to web/.gitignore)
+.DS_Store
