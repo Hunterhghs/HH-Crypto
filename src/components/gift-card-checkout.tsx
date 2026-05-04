@@ -158,9 +158,11 @@ export function GiftCardCheckout() {
             )}
           </ul>
           <p className="mt-2 opacity-90">
-            Create <code className="rounded bg-black/30 px-1">.env.local</code> in{" "}
-            <code className="rounded bg-black/30 px-1">web/</code>; restart{" "}
-            <code className="rounded bg-black/30 px-1">npm run dev</code>.
+            For local dev, create{" "}
+            <code className="rounded bg-black/30 px-1">.env.local</code> next to{" "}
+            <code className="rounded bg-black/30 px-1">package.json</code>; restart{" "}
+            <code className="rounded bg-black/30 px-1">npm run dev</code>. On Vercel,
+            set env vars in the dashboard.
           </p>
         </div>
       )}
